@@ -1,0 +1,920 @@
+<!DOCTYPE html>
+<html lang="zh-TW" class="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>BEYBLADE X - Han Limit 賽事報到與管理系統 (雲端同步版)</title>
+  
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            brand: {
+              red: '#ff0033',
+              cyan: '#00f0ff',
+              dark: '#0a0d14',
+              card: '#121824',
+              border: '#1e293b'
+            }
+          }
+        }
+      }
+    }
+  </script>
+
+  <!-- Lucide Icons -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <!-- QRCode.js (生成 QR Code) -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+  <!-- Html5-QRCode (掃描 QR Code) -->
+  <script src="https://unpkg.com/html5-qrcode"></script>
+
+  <!-- Firebase SDK (Compat 版本) -->
+  <script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-database-compat.js"></script>
+
+  <style>
+    body {
+      background-color: #0a0d14;
+      color: #f3f4f6;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    }
+    .glow-cyan {
+      box-shadow: 0 0 15px rgba(0, 240, 255, 0.25);
+    }
+    .glow-red {
+      box-shadow: 0 0 15px rgba(255, 0, 51, 0.25);
+    }
+    .glow-green {
+      box-shadow: 0 0 15px rgba(34, 197, 94, 0.3);
+    }
+  </style>
+</head>
+<body class="min-h-screen flex flex-col justify-between selection:bg-brand-cyan selection:text-black relative">
+
+  <!-- 頂部導覽列 -->
+  <header class="border-b border-brand-border bg-brand-card/80 backdrop-blur sticky top-0 z-40">
+    <div class="max-w-4xl mx-auto px-4 py-3 flex items-center justify-between">
+      <div class="flex items-center space-x-2">
+        <i data-lucide="zap" class="text-brand-cyan w-6 h-6"></i>
+        <span class="font-black text-xl tracking-wider text-transparent bg-clip-text bg-gradient-to-r from-brand-cyan to-brand-red">
+          BEYBLADE X
+        </span>
+        <span class="text-xs bg-brand-red/20 text-brand-red font-bold px-2 py-0.5 rounded border border-brand-red/30">
+          HAN LIMIT
+        </span>
+      </div>
+      <div class="flex items-center gap-3">
+        <!-- 雲端同步狀態標籤 -->
+        <div id="cloud-sync-status" class="text-xs px-2 py-0.5 rounded bg-yellow-500/20 text-yellow-400 border border-yellow-500/30 flex items-center gap-1">
+          <span class="w-2 h-2 rounded-full bg-yellow-400 animate-pulse"></span> 連線中...
+        </div>
+        <div id="user-status-tag" class="text-xs text-gray-400 flex items-center gap-1">
+          <!-- JS 動態帶入登入狀態 -->
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <!-- 主要內容區 -->
+  <main class="max-w-4xl mx-auto w-full px-4 py-6 flex-grow">
+    
+    <!-- Tab 切換按鈕 -->
+    <nav class="grid grid-cols-4 gap-2 mb-6 bg-brand-card p-1.5 rounded-xl border border-brand-border text-sm font-bold">
+      <button onclick="switchTab('tournaments')" id="tab-btn-tournaments" class="tab-btn py-2.5 rounded-lg flex flex-col sm:flex-row items-center justify-center gap-1.5 transition-all text-brand-cyan bg-brand-cyan/10">
+        <i data-lucide="trophy" class="w-4 h-4"></i>
+        <span>今日賽程</span>
+      </button>
+      <button onclick="switchTab('register')" id="tab-btn-register" class="tab-btn py-2.5 rounded-lg flex flex-col sm:flex-row items-center justify-center gap-1.5 transition-all text-gray-400 hover:text-white">
+        <i data-lucide="user-plus" class="w-4 h-4"></i>
+        <span>選手註冊</span>
+      </button>
+      <button onclick="switchTab('player')" id="tab-btn-player" class="tab-btn py-2.5 rounded-lg flex flex-col sm:flex-row items-center justify-center gap-1.5 transition-all text-gray-400 hover:text-white">
+        <i data-lucide="qr-code" class="w-4 h-4"></i>
+        <span>選手專區</span>
+      </button>
+      <button onclick="switchTab('admin')" id="tab-btn-admin" class="tab-btn py-2.5 rounded-lg flex flex-col sm:flex-row items-center justify-center gap-1.5 transition-all text-gray-400 hover:text-white">
+        <i data-lucide="shield-check" class="w-4 h-4"></i>
+        <span>工作人員</span>
+      </button>
+    </nav>
+
+    <!-- Tab 1: 今日賽程 (首頁預設) -->
+    <section id="tab-tournaments" class="tab-content space-y-4">
+      <div class="flex justify-between items-center bg-brand-card p-4 rounded-xl border border-brand-border">
+        <div>
+          <h2 class="text-lg font-bold text-white flex items-center gap-2">
+            <i data-lucide="calendar" class="text-brand-cyan w-5 h-5"></i> 今日賽事清單
+          </h2>
+          <p class="text-xs text-gray-400 mt-1">查看最新賽程並立即進行線上報名 (跨裝置即時同步)</p>
+        </div>
+        <button onclick="renderTournaments()" class="p-2 bg-slate-800 hover:bg-slate-700 text-gray-300 rounded-lg text-xs flex items-center gap-1">
+          <i data-lucide="rotate-cw" class="w-3.5 h-3.5"></i> 重新整理
+        </button>
+      </div>
+
+      <!-- 賽事卡片容器 -->
+      <div id="tournaments-list" class="grid gap-4 sm:grid-cols-2">
+        <!-- 由 JS 動態生成賽事列表 -->
+      </div>
+    </section>
+
+    <!-- Tab 2: 選手註冊 -->
+    <section id="tab-register" class="tab-content hidden space-y-4">
+      <div class="bg-brand-card p-6 rounded-xl border border-brand-border space-y-4">
+        <h2 class="text-lg font-bold text-white flex items-center gap-2">
+          <i data-lucide="user-plus" class="text-brand-cyan w-5 h-5"></i> 新選手註冊
+        </h2>
+        
+        <form id="register-form" onsubmit="handleRegister(event)" class="space-y-4">
+          <div>
+            <label class="block text-xs font-bold text-gray-300 mb-1">選手照片 / 陀螺照</label>
+            <input type="file" id="reg-photo" accept="image/*" onchange="previewPhoto(event)" class="w-full text-xs text-gray-400 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-brand-cyan/20 file:text-brand-cyan hover:file:bg-brand-cyan/30">
+            <div id="photo-preview-container" class="mt-2 hidden">
+              <img id="photo-preview" class="w-20 h-20 object-cover rounded-lg border border-brand-cyan">
+            </div>
+          </div>
+
+          <div>
+            <label class="block text-xs font-bold text-gray-300 mb-1">選手暱稱 *</label>
+            <input type="text" id="reg-name" required placeholder="例如：蒼井霸斗" class="w-full bg-slate-900 border border-brand-border rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-brand-cyan">
+          </div>
+
+          <div>
+            <label class="block text-xs font-bold text-gray-300 mb-1">電話 / 身分證末 3 碼 *</label>
+            <input type="text" id="reg-code" maxlength="3" required placeholder="例如：888" class="w-full bg-slate-900 border border-brand-border rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-brand-cyan">
+          </div>
+
+          <div>
+            <label class="block text-xs font-bold text-gray-300 mb-1">自訂登入密碼 *</label>
+            <input type="password" id="reg-password" required placeholder="請輸入 4 位數以上密碼" class="w-full bg-slate-900 border border-brand-border rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-brand-cyan">
+          </div>
+
+          <button type="submit" class="w-full bg-brand-cyan text-black font-bold py-2.5 rounded-lg hover:bg-cyan-400 transition-all glow-cyan mt-2">
+            完成註冊並登入
+          </button>
+        </form>
+      </div>
+    </section>
+
+    <!-- Tab 3: 選手專區 -->
+    <section id="tab-player" class="tab-content hidden space-y-4">
+      <div id="player-login-card" class="bg-brand-card p-6 rounded-xl border border-brand-border space-y-4">
+        <h2 class="text-lg font-bold text-white flex items-center gap-2">
+          <i data-lucide="log-in" class="text-brand-cyan w-5 h-5"></i> 選手登入
+        </h2>
+        <form onsubmit="handlePlayerLogin(event)" class="space-y-4">
+          <div>
+            <label class="block text-xs font-bold text-gray-300 mb-1">選手暱稱</label>
+            <input type="text" id="login-name" required placeholder="請輸入暱稱" class="w-full bg-slate-900 border border-brand-border rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-brand-cyan">
+          </div>
+          <div>
+            <label class="block text-xs font-bold text-gray-300 mb-1">登入密碼</label>
+            <input type="password" id="login-password" required placeholder="請輸入密碼" class="w-full bg-slate-900 border border-brand-border rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-brand-cyan">
+          </div>
+          <button type="submit" class="w-full bg-slate-800 hover:bg-slate-700 text-brand-cyan border border-brand-cyan/40 font-bold py-2.5 rounded-lg transition-all">
+            登入個人帳號
+          </button>
+        </form>
+      </div>
+
+      <div id="player-profile-card" class="hidden space-y-4">
+        <div class="bg-brand-card p-6 rounded-xl border border-brand-border flex flex-col items-center text-center relative">
+          <button onclick="handlePlayerLogout()" class="absolute top-4 right-4 text-xs bg-red-500/20 text-red-400 px-2.5 py-1 rounded border border-red-500/30 hover:bg-red-500/30">
+            登出
+          </button>
+          
+          <img id="profile-avatar" src="" alt="Avatar" class="w-24 h-24 rounded-full border-2 border-brand-cyan object-cover mb-3 glow-cyan">
+          <h3 id="profile-name" class="text-xl font-black text-white">---</h3>
+          <p class="text-xs text-gray-400 mt-0.5">識別碼末 3 碼：<span id="profile-code" class="text-brand-cyan font-bold">---</span></p>
+
+          <div class="mt-6 bg-white p-4 rounded-xl border border-gray-200 text-center">
+            <div id="qrcode-canvas" class="flex justify-center"></div>
+            <p class="text-xs text-gray-600 font-bold mt-2">賽事專屬 QR Code 通行證</p>
+          </div>
+          <p class="text-xs text-gray-500 mt-2">出示此 QR Code 供工作人員掃描報到</p>
+        </div>
+
+        <!-- 選手已報名賽事列表 -->
+        <div class="bg-brand-card p-4 rounded-xl border border-brand-border space-y-3">
+          <div class="flex justify-between items-center">
+            <h4 class="text-sm font-bold text-white flex items-center gap-2">
+              <i data-lucide="check-circle-2" class="text-green-400 w-4 h-4"></i> 我已報名的賽程與報到狀態
+            </h4>
+            <button onclick="renderPlayerProfile()" class="text-[10px] text-brand-cyan bg-slate-800 px-2 py-1 rounded flex items-center gap-1 border border-brand-cyan/30">
+              <i data-lucide="rotate-cw" class="w-3 h-3"></i> 重新整理
+            </button>
+          </div>
+          <div id="my-registered-tournaments" class="space-y-2 text-xs text-gray-300">
+            <!-- JS 動態帶入 -->
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Tab 4: 工作人員後台 -->
+    <section id="tab-admin" class="tab-content hidden space-y-4">
+      <div id="admin-lock-card" class="bg-brand-card p-6 rounded-xl border border-brand-border space-y-4 text-center">
+        <i data-lucide="lock" class="w-12 h-12 text-brand-red mx-auto"></i>
+        <h2 class="text-lg font-bold text-white">工作人員權限驗證</h2>
+        <p class="text-xs text-gray-400">請輸入解鎖密碼（預設：0713）</p>
+        
+        <div class="max-w-xs mx-auto space-y-3">
+          <input type="password" id="admin-pass-input" placeholder="請輸入工作人員密碼" class="w-full bg-slate-900 border border-brand-border rounded-lg px-3 py-2 text-sm text-center text-white focus:outline-none focus:border-brand-red">
+          <button onclick="unlockAdmin()" class="w-full bg-brand-red text-white font-bold py-2 rounded-lg hover:bg-red-600 transition-all glow-red">
+            解鎖後台
+          </button>
+        </div>
+      </div>
+
+      <div id="admin-panel" class="hidden space-y-6">
+        <!-- 區塊 A: 建立今日賽程 -->
+        <div class="bg-brand-card p-5 rounded-xl border border-brand-border space-y-4">
+          <h3 class="text-md font-bold text-white flex items-center gap-2">
+            <i data-lucide="calendar-plus" class="text-brand-cyan w-5 h-5"></i> 發布/建立今日賽程
+          </h3>
+          <form onsubmit="handleCreateTournament(event)" class="grid gap-3 sm:grid-cols-2">
+            <div class="sm:col-span-2">
+              <label class="block text-xs font-bold text-gray-300 mb-1">賽事名稱 *</label>
+              <input type="text" id="tour-title" required placeholder="例如：0713 早上場 HAN LIMIT 限制賽" class="w-full bg-slate-900 border border-brand-border rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-brand-cyan">
+            </div>
+            <div>
+              <label class="block text-xs font-bold text-gray-300 mb-1">比賽時間描述</label>
+              <input type="text" id="tour-time" placeholder="例如：今日 10:30 開始" class="w-full bg-slate-900 border border-brand-border rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-brand-cyan">
+            </div>
+            <div>
+              <label class="block text-xs font-bold text-gray-300 mb-1">人數上限 (名額)</label>
+              <input type="number" id="tour-max" value="32" min="1" required class="w-full bg-slate-900 border border-brand-border rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-brand-cyan">
+            </div>
+            <div class="sm:col-span-2">
+              <button type="submit" class="w-full bg-brand-cyan text-black font-bold py-2 rounded-lg hover:bg-cyan-400 text-xs transition-all">
+                + 發布賽事至首頁
+              </button>
+            </div>
+          </form>
+        </div>
+
+        <!-- 區塊 B: QR Code 實體鏡頭掃描器 -->
+        <div class="bg-brand-card p-5 rounded-xl border border-brand-border space-y-3">
+          <h3 class="text-md font-bold text-white flex items-center gap-2">
+            <i data-lucide="scan-line" class="text-brand-cyan w-5 h-5"></i> 現場 QR Code 掃描檢錄
+          </h3>
+          <div id="qr-reader" class="w-full overflow-hidden rounded-lg bg-black min-h-[200px]"></div>
+          <div class="flex gap-2">
+            <button onclick="startScanner()" class="flex-1 bg-slate-800 hover:bg-slate-700 text-white text-xs font-bold py-2 rounded border border-gray-600">啟動相機掃描</button>
+            <button onclick="stopScanner()" class="flex-1 bg-slate-800 hover:bg-slate-700 text-red-400 text-xs font-bold py-2 rounded border border-gray-600">關閉相機</button>
+          </div>
+        </div>
+
+        <!-- 區塊 C: 賽程管理與名單檢閱 -->
+        <div class="bg-brand-card p-5 rounded-xl border border-brand-border space-y-4">
+          <h3 class="text-md font-bold text-white flex items-center gap-2">
+            <i data-lucide="list-checks" class="text-brand-cyan w-5 h-5"></i> 今日賽程控管與名單獨立檢閱
+          </h3>
+          <div id="admin-tournaments-list" class="space-y-3">
+            <!-- JS 動態生成 -->
+          </div>
+        </div>
+
+        <!-- 區塊 D: 所有註冊選手清單 -->
+        <div class="bg-brand-card p-5 rounded-xl border border-brand-border space-y-4">
+          <div class="flex justify-between items-center">
+            <h3 class="text-md font-bold text-white flex items-center gap-2">
+              <i data-lucide="users" class="text-brand-cyan w-5 h-5"></i> 雲端選手資料庫
+            </h3>
+            <span id="registered-count-tag" class="text-xs bg-slate-800 text-brand-cyan px-2 py-1 rounded border border-brand-cyan/30">共 0 人</span>
+          </div>
+          <input type="text" id="admin-search" oninput="renderAdminPlayers()" placeholder="搜尋暱稱或末 3 碼..." class="w-full bg-slate-900 border border-brand-border rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none">
+          <div id="admin-players-list" class="divide-y divide-slate-800 max-h-80 overflow-y-auto">
+            <!-- JS 動態帶入 -->
+          </div>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- 獨立彈出視窗：賽事報名名單 Modal -->
+  <div id="tournament-players-modal" class="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden">
+    <div class="bg-brand-card w-full max-w-lg rounded-xl border border-brand-border flex flex-col max-h-[85vh] shadow-2xl">
+      <div class="p-4 border-b border-brand-border flex justify-between items-center">
+        <div>
+          <h3 id="modal-tournament-title" class="text-base font-bold text-white">賽事名稱</h3>
+          <p id="modal-tournament-info" class="text-xs text-brand-cyan mt-0.5">報名人數：0 / 32 人</p>
+        </div>
+        <button onclick="closeModal()" class="text-gray-400 hover:text-white p-1">
+          <i data-lucide="x" class="w-5 h-5"></i>
+        </button>
+      </div>
+      
+      <div id="modal-players-list" class="p-4 overflow-y-auto space-y-2 flex-grow divide-y divide-slate-800">
+        <!-- JS 動態帶入名單 -->
+      </div>
+
+      <div class="p-3 border-t border-brand-border text-right bg-slate-900/50 rounded-b-xl">
+        <button onclick="closeModal()" class="bg-slate-800 hover:bg-slate-700 text-white text-xs px-4 py-2 rounded-lg font-bold">
+          關閉
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <footer class="border-t border-brand-border bg-brand-card py-4 text-center text-xs text-gray-500">
+    <p>BEYBLADE X Han Limit Event System &copy; 2026</p>
+  </footer>
+
+  <script>
+    // =========================================================
+    // ⚠️ 請填入您的 Firebase 設定值 (可在 Firebase Console 取得)
+    // =========================================================
+    const firebaseConfig = {
+       apiKey: "AIzaSyCi3c4oIKaCocI6-y4aB90nEVIUdtSNn-Y",
+  authDomain: "project-8987898800061663557.firebaseapp.com",
+  databaseURL: "https://project-8987898800061663557-default-rtdb.firebaseio.com",
+  projectId: "project-8987898800061663557",
+  storageBucket: "project-8987898800061663557.firebasestorage.app",
+  messagingSenderId: "79792768083",
+  appId: "1:79792768083:web:16c84aaa1da1e1ded0f2a6",
+  measurementId: "G-NMVBXVHDYX"
+    };
+
+    // 初始化 Firebase
+    firebase.initializeApp(firebaseConfig);
+    const db = firebase.database();
+
+    // 全局變數
+    let players = [];
+    let tournaments = [];
+    let currentUser = JSON.parse(localStorage.getItem('bx_current_user') || 'null');
+    let currentModalTourId = null;
+    let html5QrCode = null;
+
+    document.addEventListener('DOMContentLoaded', () => {
+      lucide.createIcons();
+      updateUserStatusUI();
+      initFirebaseSync();
+      checkUrlAutoLogin();
+    });
+
+    // 核心 Firebase 雲端即時同步監聽 (解決跨裝置問題)
+    function initFirebaseSync() {
+      const statusTag = document.getElementById('cloud-sync-status');
+      
+      db.ref('bx_data').on('value', (snapshot) => {
+        const data = snapshot.val() || {};
+        players = data.players || [];
+        tournaments = data.tournaments || [];
+
+        statusTag.className = "text-xs px-2 py-0.5 rounded bg-green-500/20 text-green-400 border border-green-500/30 flex items-center gap-1";
+        statusTag.innerHTML = `<span class="w-2 h-2 rounded-full bg-green-400"></span> 雲端同步中`;
+
+        // 刷新畫面
+        renderTournaments();
+        if (!document.getElementById('tab-player').classList.contains('hidden')) {
+          renderPlayerProfile();
+        }
+        if (!document.getElementById('tab-admin').classList.contains('hidden')) {
+          renderAdminPanel();
+        }
+        if (currentModalTourId && !document.getElementById('tournament-players-modal').classList.contains('hidden')) {
+          openTournamentPlayersModal(currentModalTourId);
+        }
+      }, (err) => {
+        statusTag.className = "text-xs px-2 py-0.5 rounded bg-red-500/20 text-red-400 border border-red-500/30 flex items-center gap-1";
+        statusTag.innerHTML = `<span class="w-2 h-2 rounded-full bg-red-400"></span> 同步失敗`;
+      });
+    }
+
+    // 寫入雲端資料庫
+    function saveData() {
+      db.ref('bx_data').set({
+        players: players,
+        tournaments: tournaments
+      });
+      localStorage.setItem('bx_current_user', JSON.stringify(currentUser));
+    }
+
+    function switchTab(tabName) {
+      document.querySelectorAll('.tab-content').forEach(el => el.classList.add('hidden'));
+      document.querySelectorAll('.tab-btn').forEach(btn => {
+        btn.classList.remove('text-brand-cyan', 'bg-brand-cyan/10');
+        btn.classList.add('text-gray-400');
+      });
+
+      document.getElementById(`tab-${tabName}`).classList.remove('hidden');
+      const activeBtn = document.getElementById(`tab-btn-${tabName}`);
+      activeBtn.classList.add('text-brand-cyan', 'bg-brand-cyan/10');
+      activeBtn.classList.remove('text-gray-400');
+
+      if (tabName === 'tournaments') renderTournaments();
+      if (tabName === 'player') renderPlayerProfile();
+      if (tabName === 'admin') renderAdminPanel();
+    }
+
+    function updateUserStatusUI() {
+      const tag = document.getElementById('user-status-tag');
+      if (currentUser) {
+        tag.innerHTML = `<span class="w-2 h-2 rounded-full bg-green-400 animate-pulse"></span> 已登入: <b class="text-white">${currentUser.name}</b>`;
+      } else {
+        tag.innerHTML = `<span class="w-2 h-2 rounded-full bg-gray-500"></span> 未登入`;
+      }
+    }
+
+    function previewPhoto(event) {
+      const file = event.target.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = function(e) {
+        const img = new Image();
+        img.onload = function() {
+          const canvas = document.createElement('canvas');
+          const ctx = canvas.getContext('2d');
+          canvas.width = 200;
+          canvas.height = 200;
+          ctx.drawImage(img, 0, 0, 200, 200);
+          const base64 = canvas.toDataURL('image/jpeg', 0.8);
+          document.getElementById('photo-preview').src = base64;
+          document.getElementById('photo-preview-container').classList.remove('hidden');
+        };
+        img.src = e.target.result;
+      };
+      reader.readAsDataURL(file);
+    }
+
+    function handleRegister(e) {
+      e.preventDefault();
+      const name = document.getElementById('reg-name').value.trim();
+      const code = document.getElementById('reg-code').value.trim();
+      const password = document.getElementById('reg-password').value;
+      const photoSrc = document.getElementById('photo-preview').src || '';
+
+      if (players.some(p => p.name === name && p.code === code)) {
+        alert('已有相同的選手暱稱與末3碼註冊過！');
+        return;
+      }
+
+      const newPlayer = { id: 'p_' + Date.now(), name, code, password, photo: photoSrc };
+      players.push(newPlayer);
+      currentUser = newPlayer;
+      saveData();
+      updateUserStatusUI();
+
+      alert('註冊成功！資料已同步雲端，已為您自動登入。');
+      document.getElementById('register-form').reset();
+      document.getElementById('photo-preview-container').classList.add('hidden');
+      switchTab('player');
+    }
+
+    function handlePlayerLogin(e) {
+      e.preventDefault();
+      const name = document.getElementById('login-name').value.trim();
+      const pass = document.getElementById('login-password').value;
+
+      const player = players.find(p => p.name === name && p.password === pass);
+      if (player) {
+        currentUser = player;
+        saveData();
+        updateUserStatusUI();
+        switchTab('player');
+      } else {
+        alert('暱稱或密碼錯誤！');
+      }
+    }
+
+    function handlePlayerLogout() {
+      currentUser = null;
+      localStorage.removeItem('bx_current_user');
+      updateUserStatusUI();
+      switchTab('tournaments');
+    }
+
+    function renderPlayerProfile() {
+      const loginCard = document.getElementById('player-login-card');
+      const profileCard = document.getElementById('player-profile-card');
+
+      if (!currentUser) {
+        loginCard.classList.remove('hidden');
+        profileCard.classList.add('hidden');
+        return;
+      }
+
+      loginCard.classList.add('hidden');
+      profileCard.classList.remove('hidden');
+
+      document.getElementById('profile-name').innerText = currentUser.name;
+      document.getElementById('profile-code').innerText = currentUser.code;
+      document.getElementById('profile-avatar').src = currentUser.photo || 'https://via.placeholder.com/150/121824/00f0ff?text=BEY';
+
+      const qrContainer = document.getElementById('qrcode-canvas');
+      qrContainer.innerHTML = '';
+      const passUrl = `${window.location.origin}${window.location.pathname}?qr_id=${currentUser.id}`;
+      new QRCode(qrContainer, {
+        text: passUrl,
+        width: 140,
+        height: 140,
+        colorDark : "#000000",
+        colorLight : "#ffffff",
+        correctLevel : QRCode.CorrectLevel.H
+      });
+
+      const myRegList = document.getElementById('my-registered-tournaments');
+      const myTours = tournaments.filter(t => t.registeredPlayerIds && t.registeredPlayerIds.includes(currentUser.id));
+      
+      if (myTours.length === 0) {
+        myRegList.innerHTML = `<p class="text-gray-500 italic py-2">目前尚未報名任何今日賽程。</p>`;
+      } else {
+        myRegList.innerHTML = myTours.map(t => {
+          const isCheckedIn = t.checkedInPlayerIds && t.checkedInPlayerIds.includes(currentUser.id);
+          return `
+            <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center bg-slate-900 p-3 rounded-lg border border-brand-border gap-2">
+              <div>
+                <div class="flex items-center gap-2">
+                  <p class="font-bold text-white text-sm">${t.title}</p>
+                  ${isCheckedIn 
+                    ? `<span class="bg-green-500/20 text-green-400 border border-green-500/40 text-[10px] font-bold px-2 py-0.5 rounded flex items-center gap-1 glow-green">
+                         <i data-lucide="check-circle" class="w-3 h-3"></i> 報到成功
+                       </span>` 
+                    : `<span class="bg-yellow-500/20 text-yellow-400 border border-yellow-500/40 text-[10px] font-bold px-2 py-0.5 rounded">
+                         尚未檢錄
+                       </span>`}
+                </div>
+                <p class="text-[11px] text-gray-400 mt-0.5">${t.time || '今日賽程'}</p>
+              </div>
+              
+              <div class="flex items-center gap-2 w-full sm:w-auto justify-end">
+                ${isCheckedIn 
+                  ? `<span class="text-xs text-green-400 font-bold flex items-center gap-1"><i data-lucide="shield-check" class="w-4 h-4"></i> 現場報到完成</span>` 
+                  : `<button onclick="toggleRegister('${t.id}')" class="text-xs bg-red-500/20 hover:bg-red-500/30 text-red-400 px-3 py-1 rounded border border-red-500/30">
+                       取消報名
+                     </button>`}
+              </div>
+            </div>
+          `;
+        }).join('');
+      }
+
+      lucide.createIcons();
+    }
+
+    function renderTournaments() {
+      const listContainer = document.getElementById('tournaments-list');
+
+      if (tournaments.length === 0) {
+        listContainer.innerHTML = `
+          <div class="sm:col-span-2 text-center py-10 bg-brand-card rounded-xl border border-brand-border">
+            <i data-lucide="calendar-x" class="w-10 h-10 text-gray-500 mx-auto mb-2"></i>
+            <p class="text-sm text-gray-400">今日暫無開放報名的賽事行程</p>
+          </div>
+        `;
+        lucide.createIcons();
+        return;
+      }
+
+      listContainer.innerHTML = tournaments.map(t => {
+        const regIds = t.registeredPlayerIds || [];
+        const count = regIds.length;
+        const max = t.maxPlayers;
+        const isFull = count >= max;
+        const isRegistered = currentUser && regIds.includes(currentUser.id);
+        const isOpen = t.status === 'open';
+
+        let btnHtml = '';
+        if (!isOpen) {
+          btnHtml = `<button disabled class="w-full bg-gray-800 text-gray-500 py-2 rounded text-xs font-bold">賽事已截止報名</button>`;
+        } else if (!currentUser) {
+          btnHtml = `<button onclick="switchTab('player')" class="w-full bg-slate-800 hover:bg-slate-700 text-brand-cyan border border-brand-cyan/40 py-2 rounded text-xs font-bold">登入後即可報名</button>`;
+        } else if (isRegistered) {
+          btnHtml = `<button onclick="toggleRegister('${t.id}')" class="w-full bg-red-500/20 hover:bg-red-500/30 text-red-400 border border-red-500/40 py-2 rounded text-xs font-bold">取消報名</button>`;
+        } else if (isFull) {
+          btnHtml = `<button disabled class="w-full bg-gray-800 text-gray-500 py-2 rounded text-xs font-bold">額滿 (${max} 人)</button>`;
+        } else {
+          btnHtml = `<button onclick="toggleRegister('${t.id}')" class="w-full bg-brand-cyan hover:bg-cyan-400 text-black py-2 rounded text-xs font-bold glow-cyan transition-all">立即報名</button>`;
+        }
+
+        return `
+          <div class="bg-brand-card p-5 rounded-xl border border-brand-border flex flex-col justify-between space-y-3">
+            <div>
+              <div class="flex justify-between items-start">
+                <span class="text-xs font-bold px-2 py-0.5 rounded ${isOpen ? 'bg-green-500/20 text-green-400 border border-green-500/30' : 'bg-gray-800 text-gray-400'}">
+                  ${isOpen ? '報名中' : '已關閉'}
+                </span>
+                <span class="text-xs text-brand-cyan font-mono font-bold">${count} / ${max} 人</span>
+              </div>
+              <h3 class="text-base font-bold text-white mt-2">${t.title}</h3>
+              <p class="text-xs text-gray-400 mt-1 flex items-center gap-1">
+                <i data-lucide="clock" class="w-3.5 h-3.5 text-gray-500"></i> ${t.time || '時間未定'}
+              </p>
+            </div>
+            ${btnHtml}
+          </div>
+        `;
+      }).join('');
+
+      lucide.createIcons();
+    }
+
+    function toggleRegister(tournamentId) {
+      if (!currentUser) {
+        alert('請先登入選手帳號！');
+        switchTab('player');
+        return;
+      }
+
+      const tour = tournaments.find(t => t.id === tournamentId);
+      if (!tour) return;
+
+      if (!tour.registeredPlayerIds) tour.registeredPlayerIds = [];
+      const index = tour.registeredPlayerIds.indexOf(currentUser.id);
+
+      if (index >= 0) {
+        tour.registeredPlayerIds.splice(index, 1);
+        if (tour.checkedInPlayerIds) {
+          tour.checkedInPlayerIds = tour.checkedInPlayerIds.filter(id => id !== currentUser.id);
+        }
+        alert(`已取消報名：${tour.title}`);
+      } else {
+        if (tour.registeredPlayerIds.length >= tour.maxPlayers) {
+          alert('該賽事已經額滿！');
+          return;
+        }
+        tour.registeredPlayerIds.push(currentUser.id);
+        alert(`報名成功：${tour.title}`);
+      }
+
+      saveData();
+    }
+
+    function unlockAdmin() {
+      const pass = document.getElementById('admin-pass-input').value;
+      if (pass === '0713') {
+        document.getElementById('admin-lock-card').classList.add('hidden');
+        document.getElementById('admin-panel').classList.remove('hidden');
+        renderAdminPanel();
+      } else {
+        alert('工作人員密碼錯誤！');
+      }
+    }
+
+    function renderAdminPanel() {
+      renderAdminTournaments();
+      renderAdminPlayers();
+    }
+
+    function handleCreateTournament(e) {
+      e.preventDefault();
+      const title = document.getElementById('tour-title').value.trim();
+      const time = document.getElementById('tour-time').value.trim();
+      const maxPlayers = parseInt(document.getElementById('tour-max').value) || 32;
+
+      const newTour = {
+        id: 'tour_' + Date.now(),
+        title,
+        time,
+        maxPlayers,
+        status: 'open',
+        registeredPlayerIds: [],
+        checkedInPlayerIds: []
+      };
+
+      tournaments.unshift(newTour);
+      saveData();
+
+      alert('今日賽程已成功建立並發布！');
+      e.target.reset();
+    }
+
+    function renderAdminTournaments() {
+      const container = document.getElementById('admin-tournaments-list');
+      if (tournaments.length === 0) {
+        container.innerHTML = `<p class="text-xs text-gray-500">尚無發布的賽程。</p>`;
+        return;
+      }
+
+      container.innerHTML = tournaments.map(t => {
+        const count = (t.registeredPlayerIds || []).length;
+        const checkedCount = (t.checkedInPlayerIds || []).length;
+        return `
+          <div class="bg-slate-900 p-3.5 rounded-lg border border-brand-border flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
+            <div>
+              <p class="font-bold text-sm text-white">${t.title}</p>
+              <p class="text-xs text-brand-cyan mt-0.5">已報名：${count} / ${t.maxPlayers} 人 <span class="text-green-400 font-bold ml-1">(已檢錄 ${checkedCount} 人)</span></p>
+            </div>
+            <div class="flex flex-wrap gap-2 text-xs w-full sm:w-auto">
+              <button onclick="openTournamentPlayersModal('${t.id}')" class="flex-1 sm:flex-none px-3 py-1.5 rounded bg-brand-cyan/20 text-brand-cyan border border-brand-cyan/40 font-bold hover:bg-brand-cyan/30 flex items-center justify-center gap-1">
+                <i data-lucide="users" class="w-3.5 h-3.5"></i> 查看名單
+              </button>
+              <button onclick="toggleTournamentStatus('${t.id}')" class="px-2.5 py-1.5 rounded ${t.status === 'open' ? 'bg-yellow-500/20 text-yellow-400' : 'bg-green-500/20 text-green-400'}">
+                ${t.status === 'open' ? '關閉報名' : '開放報名'}
+              </button>
+              <button onclick="deleteTournament('${t.id}')" class="px-2.5 py-1.5 rounded bg-red-500/20 text-red-400">
+                刪除
+              </button>
+            </div>
+          </div>
+        `;
+      }).join('');
+
+      lucide.createIcons();
+    }
+
+    function openTournamentPlayersModal(tourId) {
+      currentModalTourId = tourId;
+      const tour = tournaments.find(t => t.id === tourId);
+      if (!tour) return;
+
+      if (!tour.checkedInPlayerIds) tour.checkedInPlayerIds = [];
+
+      document.getElementById('modal-tournament-title').innerText = tour.title;
+      const regIds = tour.registeredPlayerIds || [];
+      document.getElementById('modal-tournament-info').innerText = `已報名：${regIds.length} / ${tour.maxPlayers} 人 ｜ 已檢錄：${tour.checkedInPlayerIds.length} 人`;
+
+      const listContainer = document.getElementById('modal-players-list');
+      
+      if (regIds.length === 0) {
+        listContainer.innerHTML = `<p class="text-xs text-gray-500 py-6 text-center">目前尚無選手報名此場賽事。</p>`;
+      } else {
+        const regPlayers = regIds.map(id => players.find(p => p.id === id)).filter(Boolean);
+        listContainer.innerHTML = regPlayers.map((p, idx) => {
+          const isChecked = tour.checkedInPlayerIds.includes(p.id);
+          return `
+            <div class="py-3 flex items-center justify-between text-xs">
+              <div class="flex items-center space-x-3">
+                <span class="font-mono text-gray-500 w-4">${idx + 1}.</span>
+                <img src="${p.photo || 'https://via.placeholder.com/40'}" class="w-9 h-9 rounded-full object-cover border border-brand-cyan">
+                <div>
+                  <div class="flex items-center gap-1.5">
+                    <p class="font-bold text-white text-sm">${p.name}</p>
+                    ${isChecked ? `<span class="bg-green-500/20 text-green-400 border border-green-500/30 text-[10px] px-1.5 py-0.2 rounded">已檢錄</span>` : ''}
+                  </div>
+                  <p class="text-[10px] text-gray-400">末3碼: <b class="text-brand-cyan">${p.code}</b></p>
+                </div>
+              </div>
+              <div class="flex gap-2">
+                <button onclick="toggleCheckinPlayer('${tour.id}', '${p.id}')" class="px-2.5 py-1 rounded transition-all font-bold ${isChecked ? 'bg-green-500 text-black glow-green' : 'bg-slate-800 text-brand-cyan border border-brand-cyan/40 hover:bg-slate-700'}">
+                  ${isChecked ? '✓ 已報到' : '檢錄報到'}
+                </button>
+                <button onclick="removePlayerFromTournament('${tour.id}', '${p.id}')" class="bg-red-500/20 text-red-400 px-2 py-1 rounded hover:bg-red-500/30">
+                  剔除
+                </button>
+              </div>
+            </div>
+          `;
+        }).join('');
+      }
+
+      document.getElementById('tournament-players-modal').classList.remove('hidden');
+      lucide.createIcons();
+    }
+
+    function toggleCheckinPlayer(tourId, playerId) {
+      const tour = tournaments.find(t => t.id === tourId);
+      const player = players.find(p => p.id === playerId);
+      if (!tour || !player) return;
+
+      if (!tour.checkedInPlayerIds) tour.checkedInPlayerIds = [];
+
+      const index = tour.checkedInPlayerIds.indexOf(playerId);
+      if (index >= 0) {
+        tour.checkedInPlayerIds.splice(index, 1);
+        alert(`已取消選手【${player.name}】的報到狀態`);
+      } else {
+        tour.checkedInPlayerIds.push(playerId);
+        alert(`【${player.name}】該場次檢錄報到成功！`);
+      }
+
+      saveData();
+    }
+
+    function closeModal() {
+      document.getElementById('tournament-players-modal').classList.add('hidden');
+      currentModalTourId = null;
+    }
+
+    function removePlayerFromTournament(tourId, playerId) {
+      if (!confirm('確定要將該選手從此賽事名單中剔除嗎？')) return;
+      
+      const tour = tournaments.find(t => t.id === tourId);
+      if (tour) {
+        if (tour.registeredPlayerIds) {
+          tour.registeredPlayerIds = tour.registeredPlayerIds.filter(id => id !== playerId);
+        }
+        if (tour.checkedInPlayerIds) {
+          tour.checkedInPlayerIds = tour.checkedInPlayerIds.filter(id => id !== playerId);
+        }
+        saveData();
+      }
+    }
+
+    function toggleTournamentStatus(id) {
+      const tour = tournaments.find(t => t.id === id);
+      if (tour) {
+        tour.status = tour.status === 'open' ? 'closed' : 'open';
+        saveData();
+      }
+    }
+
+    function deleteTournament(id) {
+      if (confirm('確定要刪除此賽程嗎？')) {
+        tournaments = tournaments.filter(t => t.id !== id);
+        saveData();
+      }
+    }
+
+    function renderAdminPlayers() {
+      const list = document.getElementById('admin-players-list');
+      const search = document.getElementById('admin-search').value.toLowerCase();
+      document.getElementById('registered-count-tag').innerText = `共 ${players.length} 人`;
+
+      const filtered = players.filter(p => p.name.toLowerCase().includes(search) || p.code.includes(search));
+
+      if (filtered.length === 0) {
+        list.innerHTML = `<p class="text-xs text-gray-500 py-3 text-center">無符合的選手資料</p>`;
+        return;
+      }
+
+      list.innerHTML = filtered.map(p => `
+        <div class="py-2.5 flex items-center justify-between text-xs">
+          <div class="flex items-center space-x-2">
+            <img src="${p.photo || 'https://via.placeholder.com/40'}" class="w-8 h-8 rounded-full object-cover border border-brand-cyan">
+            <div>
+              <p class="font-bold text-white">${p.name}</p>
+              <p class="text-[10px] text-gray-400">末3碼: ${p.code}</p>
+            </div>
+          </div>
+        </div>
+      `).join('');
+    }
+
+    function startScanner() {
+      html5QrCode = new Html5Qrcode("qr-reader");
+      html5QrCode.start(
+        { facingMode: "environment" },
+        { fps: 10, qrbox: { width: 200, height: 200 } },
+        (decodedText) => {
+          stopScanner();
+          handleScannedUrl(decodedText);
+        },
+        () => {}
+      ).catch(err => alert("相機啟動失敗或缺乏權限"));
+    }
+
+    function stopScanner() {
+      if (html5QrCode) {
+        html5QrCode.stop().then(() => html5QrCode.clear());
+      }
+    }
+
+    function handleScannedUrl(urlText) {
+      try {
+        const url = new URL(urlText);
+        const qrId = url.searchParams.get("qr_id");
+        if (qrId) {
+          const player = players.find(p => p.id === qrId);
+          if (player) {
+            let checkedTour = null;
+            tournaments.forEach(t => {
+              if (t.registeredPlayerIds && t.registeredPlayerIds.includes(player.id)) {
+                if (!t.checkedInPlayerIds) t.checkedInPlayerIds = [];
+                if (!t.checkedInPlayerIds.includes(player.id)) {
+                  t.checkedInPlayerIds.push(player.id);
+                  checkedTour = t;
+                }
+              }
+            });
+
+            saveData();
+            if (checkedTour) {
+              alert(`【掃描成功 - 報到完成】\n\n選手：${player.name} (末3碼: ${player.code})\n賽事：${checkedTour.title}`);
+            } else {
+              alert(`【掃描成功】\n選手：${player.name} (末3碼: ${player.code})\n（該選手已完成所有場次檢錄，或尚未報名今日賽程）`);
+            }
+          } else {
+            alert('未找到該 QR Code 對應的選手資料');
+          }
+        } else {
+          alert('非本賽事系統有效的 QR Code 通行證');
+        }
+      } catch (e) {
+        alert('無效的 QR Code 連結內容');
+      }
+    }
+
+    function checkUrlAutoLogin() {
+      const urlParams = new URLSearchParams(window.location.search);
+      const qrId = urlParams.get('qr_id');
+      if (qrId) {
+        const player = players.find(p => p.id === qrId);
+        if (player) {
+          currentUser = player;
+          localStorage.setItem('bx_current_user', JSON.stringify(currentUser));
+          updateUserStatusUI();
+        }
+      }
+    }
+  </script>
+</body>
+</html>
